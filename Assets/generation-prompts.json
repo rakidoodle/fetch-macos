@@ -1,0 +1,11 @@
+{
+  "icon": "Use case: logo-brand. Asset type: premium native macOS application icon for Fetch, a download manager. A centered, precision-crafted porcelain-white downward arrow descending into a softly rounded collection tray, on a deep cobalt blue rounded-square macOS icon tile. Subtle dimensional bevel, restrained soft studio lighting, crisp silhouette readable at 16 pixels. Square 1024x1024 composition, icon tile occupies 86 percent of canvas with transparent padding around it. No letters, no words, no logos, no extra symbols, no mockup, no watermark. Transparent background outside the rounded-square tile.",
+  "emptyLibrary": "Use case: stylized-concept. Asset type: small premium empty-library illustration for a native macOS download utility named Fetch. A single elegant frosted-glass download tray with a floating pale blue downward arrow directly above it, softly lit three-dimensional product render, calm and understated, centered composition with abundant transparent negative space, readable at 160 pixels. Cool blue and silver material, no backdrop, no cast background rectangle, no text, no UI, no watermark, no scatter of decorative objects. Transparent background, excellent silhouette in both dark and light interfaces.",
+  "tool": "Built-in image_gen",
+  "saved_outputs": {
+    "app_icon": "Assets/app-icon.png",
+    "empty_library": "Assets/empty-library.png",
+    "icns": "Assets/AppIcon.icns",
+    "favicon": "Assets/favicon.ico"
+  }
+}
