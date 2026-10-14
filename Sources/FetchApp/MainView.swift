@@ -16,7 +16,7 @@ struct MainView: View {
                         ForEach([LibrarySection.all, .active, .completed, .paused, .attention]) { item in sidebarRow(item) }
                     }
                     Section("Sources") {
-                        ForEach([LibrarySection.web, .youtube, .torrent]) { item in sidebarRow(item) }
+                        ForEach([LibrarySection.web, .video, .youtube, .torrent]) { item in sidebarRow(item) }
                     }
                 }
                 .listStyle(.sidebar)
@@ -133,7 +133,7 @@ struct MainView: View {
             } else { Image(systemName: "tray.and.arrow.down").font(.system(size: 52, weight: .ultraLight)).foregroundStyle(.tint).padding(24).accessibilityHidden(true) }
             VStack(spacing: 8) {
                 Text(store.jobs.isEmpty ? "Ready when you are." : "No matching downloads").font(.system(size: 20, weight: .semibold))
-                Text(store.jobs.isEmpty ? "Add a file link, a YouTube video, or a torrent.\nFetch takes care of the transfer." : "Try another search or choose All downloads.")
+                Text(store.jobs.isEmpty ? "Add a file link, a video page, or a torrent.\nFetch takes care of the transfer." : "Try another search or choose All downloads.")
                     .font(.system(size: 13)).foregroundStyle(Color(nsColor: NativePalette.secondary)).multilineTextAlignment(.center)
             }
             if store.jobs.isEmpty {
@@ -209,7 +209,7 @@ struct TransferRow: View {
     }
     var statusSymbol: String { switch job.status { case "completed": return "checkmark.circle.fill"; case "error": return "exclamationmark.circle"; case "paused": return "pause.circle"; case "queued": return "clock"; case "canceled": return "xmark.circle"; case "processing": return "gearshape.2"; default: return "arrow.down.circle" } }
     var fileSymbol: String {
-        if job.type == .youtube { return job.mode == "audio" || job.quality == "audio" ? "music.note" : "film" }
+        if job.type.isMedia { return job.mode == "audio" || job.quality == "audio" ? "music.note" : "film" }
         if job.type == .torrent { return "shippingbox" }
         let ext = (job.name as NSString).pathExtension.lowercased()
         if ["zip", "gz", "dmg", "iso", "7z"].contains(ext) { return "doc.zipper" }

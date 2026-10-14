@@ -10,7 +10,7 @@ public actor ServiceClient {
         self.token = token
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 10
-        config.timeoutIntervalForResource = 15
+        config.timeoutIntervalForResource = 45
         config.connectionProxyDictionary = [:]
         self.session = URLSession(configuration: config)
     }
@@ -26,6 +26,11 @@ public actor ServiceClient {
         struct Result: Decodable { let id: String }
         return try JSONDecoder().decode(Result.self, from: data).id
     }
+    public func analyzeVideo(_ source: String) async throws -> VideoInfo {
+        if let error = AddRequest(type: .video, source: source).validationError { throw ServiceError.message(error) }
+        let data = try await request("api/videos/analyze", method: "POST", body: JSONSerialization.data(withJSONObject: ["source": source]), timeout: 40)
+        return try JSONDecoder().decode(VideoInfo.self, from: data)
+    }
     public func action(_ id: String, _ action: String) async throws {
         guard UUID(uuidString: id) != nil, ["pause", "resume", "cancel", "remove"].contains(action) else { throw ServiceError.message("Invalid download action.") }
         _ = try await request("api/downloads/\(id)/\(action)", method: "POST", body: Data("{}".utf8))
@@ -34,8 +39,9 @@ public actor ServiceClient {
         guard value.isValid else { throw ServiceError.message("Check connections, active downloads, and speed limit.") }
         _ = try await request("api/settings", method: "PUT", body: JSONEncoder().encode(value))
     }
-    private func request(_ path: String, method: String = "GET", body: Data? = nil) async throws -> Data {
+    private func request(_ path: String, method: String = "GET", body: Data? = nil, timeout: TimeInterval = 10) async throws -> Data {
         var request = URLRequest(url: baseURL.appendingPathComponent(path))
+        request.timeoutInterval = timeout
         request.httpMethod = method
         request.httpBody = body
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")

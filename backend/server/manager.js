@@ -1,15 +1,20 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn, spawnSync, execFile } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { mkdir, readFile, writeFile, rename, stat } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, rename, stat, mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import net from 'node:net';
+import os from 'node:os';
+import { promisify } from 'node:util';
+const runFile = promisify(execFile);
+import { analyzeVideo, videoContext, cookieText, mediaError, mediaEnvironment } from './video.js';
+const isMedia = type => ['youtube', 'video'].includes(type);
 import { EventEmitter } from 'node:events';
 
 export const ACTIVE = ['downloading', 'processing'];
 export function validateSource(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Enter a download link.');
   const type = input.type;
-  if (!['web', 'youtube', 'torrent'].includes(type)) throw new Error('Choose a supported download type.');
+  if (!['web', 'youtube', 'video', 'torrent'].includes(type)) throw new Error('Choose a supported download type.');
   const source = String(input.source || '').trim();
   if (source.length > 8192) throw new Error('Download link is too long.');
   if (type === 'torrent' && input.torrent) {
@@ -29,7 +34,7 @@ export function validateSource(input) {
   if (type === 'youtube' && !['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be'].includes(url.hostname.toLowerCase())) throw new Error('Enter a YouTube video URL.');
   const quality = input.quality || 'best';
   if (!['best', '2160', '1440', '1080', '720', '480', '360', '240', '144', 'audio'].includes(quality)) throw new Error('Choose a supported video quality.');
-  return { type, source: url.href, quality, ...(type === 'youtube' ? youtubeOptions(input) : {}) };
+  return { type, source: url.href, quality, ...(isMedia(type) ? youtubeOptions(input) : {}) };
 }
 export function youtubeOptions(input) {
   const mode = input.mode ?? (input.quality === 'audio' ? 'audio' : 'video');
@@ -37,7 +42,7 @@ export function youtubeOptions(input) {
   const resolution = input.resolution ?? (input.quality === 'audio' ? 'best' : input.quality || 'best');
   if (!['best', '2160', '1440', '1080', '720', '480', '360', '240', '144'].includes(resolution)) throw new Error('Choose a supported resolution.');
   const format = input.format ?? (mode === 'audio' ? 'mp3' : 'mp4');
-  const formats = mode === 'audio' ? ['mp3', 'm4a', 'flac', 'wav', 'opus'] : ['mp4', 'webm', 'mkv'];
+  const formats = mode === 'audio' ? ['mp3', 'm4a', 'flac', 'wav', 'opus'] : ['original', 'mp4', 'webm', 'mkv', 'mov'];
   if (!formats.includes(format)) throw new Error(`Choose a supported ${mode} format.`);
   return { mode, resolution, format, quality: mode === 'audio' ? 'audio' : resolution };
 }
@@ -45,9 +50,12 @@ export function youtubeFormatArgs(input) {
   const { mode, resolution, format } = youtubeOptions(input);
   if (mode === 'audio') return ['-f', 'bestaudio/best', '--extract-audio', '--audio-format', format];
   const cap = resolution === 'best' ? '' : `[height<=${resolution}]`;
-  if (format === 'webm') return ['-f', `bv*${cap}[ext=webm]+ba[ext=webm]/b${cap}[ext=webm]`, '--merge-output-format', 'webm', '--remux-video', 'webm'];
-  if (format === 'mp4') return ['-f', `bv*${cap}[ext=mp4]+ba[ext=m4a]/b${cap}[ext=mp4]/bv*${cap}+ba/b${cap}`, '--merge-output-format', 'mp4', '--recode-video', 'mp4'];
-  return ['-f', `bv*${cap}+ba/b${cap}`, '--merge-output-format', 'mkv', '--remux-video', 'mkv'];
+  const selection = `bv*${cap}+ba/b${cap}`;
+  if (format === 'original') return ['-f', selection];
+  if (format === 'webm') return ['-f', `bv*${cap}[ext=webm]+ba[ext=webm]/b${cap}[ext=webm]/${selection}`, '--merge-output-format', 'mkv', '--recode-video', 'webm'];
+  if (format === 'mp4') return ['-f', `bv*${cap}[ext=mp4]+ba[ext=m4a]/b${cap}[ext=mp4]/${selection}`, '--merge-output-format', 'mp4', '--recode-video', 'mp4'];
+  if (format === 'mov') return ['-f', selection, '--merge-output-format', 'mkv', '--recode-video', 'mov'];
+  return ['-f', selection, '--merge-output-format', 'mkv', '--remux-video', 'mkv'];
 }
 export function validateSettings(input) {
   if (!input || typeof input !== 'object') throw new Error('Invalid settings.');
@@ -68,7 +76,7 @@ export class DownloadManager extends EventEmitter {
   constructor({ dataDir, downloadDir, aria2 = 'aria2c', ytdlp = 'yt-dlp', pollMs = 500 }) {
     super(); this.dataDir = dataDir; this.downloadDir = downloadDir; this.aria2 = aria2; this.ytdlp = ytdlp;
     this.pollMs = pollMs; this.jobs = []; this.events = []; this.settings = { connections: 8, maxActive: 3, speedLimit: 0 };
-    this.processes = new Map(); this.lock = Promise.resolve(); this.closing = false;
+    this.processes = new Map(); this.contexts = new Map(); this.probes = new Set(); this.sessionDirs = new Set(); this.lock = Promise.resolve(); this.closing = false;
   }
   run(fn) { const promise = this.lock.then(fn); this.lock = promise.catch(() => {}); return promise; }
   async init() {
@@ -87,7 +95,7 @@ export class DownloadManager extends EventEmitter {
       let ready = false;
       for (let i = 0; i < 60; i++) { try { await this.rpc('getVersion'); ready = true; break; } catch { await new Promise(r => setTimeout(r, 50)); } }
       if (!ready) { this.daemon.kill(); throw new Error(`aria2 did not start. ${startupError}`); }
-      this.daemon.on('exit', () => { if (!this.closing) { this.engines.aria2 = false; for (const j of this.jobs) if (j.type !== 'youtube' && ACTIVE.includes(j.status)) { j.status = 'error'; j.error = 'Download engine stopped. Restart the app to recover.'; } this.changed(); } });
+      this.daemon.on('exit', () => { if (!this.closing) { this.engines.aria2 = false; for (const j of this.jobs) if (!isMedia(j.type) && ACTIVE.includes(j.status)) { j.status = 'error'; j.error = 'Download engine stopped. Restart the app to recover.'; } this.changed(); } });
     }
     await this.persist(); this.timer = setInterval(() => this.run(() => this.tick()).catch(e => { this.lastError = e.message; }), this.pollMs);
     return this;
@@ -98,18 +106,20 @@ export class DownloadManager extends EventEmitter {
   }
   async persist() {
     const target = path.join(this.dataDir, 'state.json');
-    await writeFile(`${target}.tmp`, JSON.stringify({ settings: this.settings, jobs: this.jobs, events: this.events })); await rename(`${target}.tmp`, target);
+    await writeFile(`${target}.tmp`, JSON.stringify({ settings: this.settings, jobs: this.jobs, events: this.events }), { mode: 0o600 }); await rename(`${target}.tmp`, target);
   }
   changed() { this.emit('change'); }
   event(job, verb) { this.events.unshift({ id: randomUUID(), jobId: job.id, name: job.name, verb, time: Date.now(), type: job.type }); this.events = this.events.slice(0, 60); }
   snapshot() { return { jobs: this.jobs.map(({ torrent, gid, ...job }) => job), events: this.events, settings: this.settings, engines: this.engines, downloadDir: this.downloadDir, error: this.lastError || null }; }
   async add(input) {
     const source = validateSource(input);
-    if (source.type === 'youtube' && !this.engines.youtube) throw new Error('yt-dlp is missing. Install it, then restart the app.');
-    if (source.type === 'youtube' && !this.engines.ffmpeg) throw new Error('FFmpeg is missing. Install it, then restart the app.');
-    if (source.type !== 'youtube' && !this.engines.aria2) throw new Error('aria2 is missing. Install it, then restart the app.');
-    const job = { id: randomUUID(), ...source, name: source.type === 'torrent' ? 'Resolving torrent…' : source.type === 'youtube' ? 'Fetching video details…' : decodeName(source.source), status: 'queued', created: Date.now(), total: 0, completed: 0, speed: 0, connections: 0, segments: [], files: [], error: null };
+    const context = isMedia(source.type) ? videoContext(input.context, source.source) : undefined;
+    if (isMedia(source.type) && !this.engines.youtube) throw new Error('yt-dlp is missing. Install it, then restart the app.');
+    if (isMedia(source.type) && !this.engines.ffmpeg) throw new Error('FFmpeg is missing. Install it, then restart the app.');
+    if (!isMedia(source.type) && !this.engines.aria2) throw new Error('aria2 is missing. Install it, then restart the app.');
+    const job = { id: randomUUID(), ...source, name: source.type === 'torrent' ? 'Resolving torrent…' : isMedia(source.type) ? 'Fetching video details…' : decodeName(source.source), status: 'queued', created: Date.now(), total: 0, completed: 0, speed: 0, connections: 0, segments: [], files: [], error: null };
     await mkdir(path.join(this.downloadDir, job.id), { recursive: true });
+    if (context) { this.contexts.set(job.id, context); job.browserDetected = true; }
     this.jobs.unshift(job); this.event(job, 'added'); await this.schedule(); await this.persist(); this.changed(); return job;
   }
   async schedule() {
@@ -124,9 +134,9 @@ export class DownloadManager extends EventEmitter {
   }
   async start(job) {
     job.error = null;
-    if (job.type === 'youtube') {
+    if (isMedia(job.type)) {
       const paused = this.processes.get(job.id);
-      if (paused) { signalProcess(paused, 'SIGCONT'); job.status = 'downloading'; return; }
+      if (paused) { signalProcess(paused, 'SIGCONT'); job.status = job.resumePhase === 'processing' ? 'processing' : 'downloading'; delete job.resumePhase; return; }
       return this.startYoutube(job);
     }
     if (job.gid) { await this.rpc('unpause', job.gid); job.status = 'downloading'; return; }
@@ -134,18 +144,28 @@ export class DownloadManager extends EventEmitter {
     job.gid = job.torrent ? await this.rpc('addTorrent', job.torrent, [], options) : await this.rpc('addUri', [job.source], options);
     job.status = 'downloading';
   }
-  startYoutube(job) {
-    const args = ['--ignore-config', '--no-simulate', '--no-playlist', '--no-colors', '--newline', '--progress', '--progress-delta', '0.3', '--continue', '--no-overwrites', '--restrict-filenames', '--socket-timeout', '30', '--retries', '3', '--js-runtimes', 'node', '--concurrent-fragments', String(this.settings.connections), '--paths', path.join(this.downloadDir, job.id), '--output', '%(title).150B [%(id)s].%(ext)s', '--print', 'before_dl:FETCH_META:%(title)j', '--print', 'after_move:FETCH_FILE:%(filepath)j', '--progress-template', 'download:FETCH_PROGRESS:%(progress)j', '--progress-template', 'postprocess:FETCH_PROCESS:%(progress)j'];
+  async analyzeVideo(source) { return analyzeVideo(this, source); }
+  async startYoutube(job) {
+    const context = this.contexts.get(job.id);
+    if (job.browserDetected && !context) throw new Error('Player session expired. Add this page again with Open Player to refresh the stream.');
+    let sessionDir;
+    if (context) {
+      sessionDir = await mkdtemp(path.join(os.tmpdir(), 'fetch-media-')); this.sessionDirs.add(sessionDir);
+      await writeFile(path.join(sessionDir, 'cookies.txt'), cookieText(context.cookies), { mode: 0o600 });
+    }
+    const args = ['--ignore-config', '--no-cache-dir', '--no-simulate', '--no-playlist', '--no-colors', '--newline', '--progress', '--progress-delta', '0.3', '--continue', '--no-overwrites', '--restrict-filenames', '--socket-timeout', '30', '--retries', '3', '--js-runtimes', 'node', '--concurrent-fragments', String(this.settings.connections), '--paths', path.join(this.downloadDir, job.id), '--output', '%(title).150B [%(id)s].%(ext)s', '--print', 'before_dl:FETCH_META:%(title)j', '--print', 'after_move:FETCH_FILE:%(filepath)j', '--progress-template', 'download:FETCH_PROGRESS:%(progress)j', '--progress-template', 'postprocess:FETCH_PROCESS:%(progress)j'];
     if (this.settings.speedLimit) args.push('--limit-rate', `${this.settings.speedLimit}K`);
     args.push(...youtubeFormatArgs(job));
-    args.push('--', job.source);
-    const child = spawn(this.ytdlp, args, { stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
+    if (context) args.push('--cookies', path.join(sessionDir, 'cookies.txt'), '--add-headers', `Referer:${context.referer}`, '--add-headers', `User-Agent:${context.userAgent}`);
+    args.push('--', context?.url || job.source);
+    const child = spawn(this.ytdlp, args, { env: mediaEnvironment(), stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
     this.processes.set(job.id, child); job.status = 'downloading'; let buffer = ''; let errors = ''; const streams = new Map();
     child.stdout.on('data', chunk => {
       if (this.processes.get(job.id) !== child || ['paused', 'queued', 'canceled'].includes(job.status)) return;
       buffer += chunk.toString(); const lines = buffer.split('\n'); buffer = lines.pop() || '';
       for (const line of lines) {
         try {
+          if (/^\[(VideoConvertor|VideoRemuxer|Merger|ExtractAudio)\]/.test(line) && job.status === 'downloading') { job.status = 'processing'; job.speed = 0; }
           if (line.startsWith('FETCH_META:')) job.name = JSON.parse(line.slice(11));
           if (line.startsWith('FETCH_FILE:')) { const file = JSON.parse(line.slice(11)); job.files = [{ path: file, name: path.basename(file) }]; }
           if (line.startsWith('FETCH_PROCESS:') && job.status === 'downloading') { job.status = 'processing'; job.speed = 0; }
@@ -161,15 +181,34 @@ export class DownloadManager extends EventEmitter {
     child.stderr.on('data', chunk => { errors = (errors + chunk.toString()).slice(-4000); });
     child.on('error', error => { errors = error.message; });
     child.on('close', code => this.run(async () => {
+      if (sessionDir) { await rm(sessionDir, { recursive: true, force: true }); this.sessionDirs.delete(sessionDir); }
       if (this.processes.get(job.id) !== child) return;
       this.processes.delete(job.id); job.speed = 0;
       if (job.status === 'canceled' || this.closing) return;
       if (code === 0 && job.files.length) {
-        try { const info = await stat(job.files[0].path); job.total = info.size; job.completed = info.size; job.status = 'completed'; job.finished = Date.now(); this.event(job, 'completed'); }
+        try { await this.identifyOriginal(job); const info = await stat(job.files[0].path); job.total = info.size; job.completed = info.size; job.status = 'completed'; job.finished = Date.now(); this.contexts.delete(job.id); this.event(job, 'completed'); }
         catch { job.status = 'error'; job.error = 'Video output was not found. Retry this download.'; }
-      } else { job.status = 'error'; job.error = errors.match(/ERROR:[^\n]+/g)?.at(-1)?.slice(0, 700) || `Video download failed (exit ${code}). ${errors.slice(-600)}`; this.event(job, 'failed'); }
+      } else { job.status = 'error'; job.error = mediaError(errors); this.event(job, 'failed'); }
       await this.schedule(); await this.persist(); this.changed();
     }).catch(e => { this.lastError = e.message; }));
+  }
+  async identifyOriginal(job) {
+    if (job.format !== 'original' || !job.files[0] || !['', '.unknown_video', '.bin'].includes(path.extname(job.files[0].path))) return;
+    const file = job.files[0].path;
+    const { stdout } = await runFile('ffprobe', ['-v', 'error', '-show_entries', 'format=format_name:format_tags=major_brand:stream=codec_type', '-of', 'json', file], { env: mediaEnvironment(), timeout: 10000, maxBuffer: 512000 });
+    const metadata = JSON.parse(stdout);
+    const container = metadata.format?.format_name || '';
+    let extension;
+    if (container.includes('mp4')) extension = metadata.format.tags?.major_brand?.trim() === 'qt' ? 'mov' : 'mp4';
+    else if (container.includes('matroska')) {
+      const { open } = await import('node:fs/promises');
+      const handle = await open(file, 'r');
+      try { const header = Buffer.alloc(128); await handle.read(header, 0, 128, 0); extension = header.includes(Buffer.from('webm')) ? 'webm' : 'mkv'; } finally { await handle.close(); }
+    } else extension = { avi:'avi', flv:'flv', mpegts:'ts', mpeg:'mpg', ogg:'ogv', asf:'wmv' }[container];
+    if (!extension) throw new Error('Unknown video container.');
+    const target = file.replace(/\.[^/.]+$/, '') + '.' + extension;
+    await rename(file, target);
+    job.files[0] = { ...job.files[0], path: target, name: path.basename(target) };
   }
   async tick() {
     let dirty = false;
@@ -195,6 +234,7 @@ export class DownloadManager extends EventEmitter {
     const job = this.jobs.find(j => j.id === id); if (!job) throw new Error('Download not found.');
     if (action === 'pause' && (ACTIVE.includes(job.status) || job.status === 'queued')) {
       if (job.gid) await this.rpc('forcePause', job.gid);
+      if (this.processes.has(id)) job.resumePhase = job.status;
       signalProcess(this.processes.get(id), 'SIGSTOP'); job.status = 'paused'; job.speed = 0; this.event(job, 'paused');
     } else if (action === 'resume' && ['paused', 'error', 'canceled'].includes(job.status)) { job.status = 'queued'; job.error = null; this.event(job, 'resumed'); }
     else if (action === 'cancel' && !['completed', 'canceled'].includes(job.status)) {
@@ -204,7 +244,7 @@ export class DownloadManager extends EventEmitter {
     } else if (action === 'remove' && !ACTIVE.includes(job.status) && job.status !== 'queued') {
       if (job.gid) { await this.rpc('forceRemove', job.gid).catch(() => {}); delete job.gid; }
       const child = this.processes.get(id); if (child) { this.processes.delete(id); signalProcess(child, 'SIGCONT'); signalProcess(child, 'SIGTERM'); }
-      this.jobs = this.jobs.filter(j => j.id !== id);
+      this.jobs = this.jobs.filter(j => j.id !== id); this.contexts.delete(id);
     } else throw new Error('This action is unavailable for the current download state.');
     await this.schedule(); await this.persist(); this.changed();
   }
@@ -214,7 +254,9 @@ export class DownloadManager extends EventEmitter {
     this.settings = settings; await this.schedule(); await this.persist(); this.changed();
   }
   async close() {
-    this.closing = true; clearInterval(this.timer); await this.lock;
+    this.closing = true; clearInterval(this.timer);
+    for (const child of this.probes) { signalProcess(child, 'SIGKILL'); }
+    await this.lock;
     for (const [id, child] of this.processes) { this.processes.delete(id); signalProcess(child, 'SIGCONT'); signalProcess(child, 'SIGTERM'); }
     for (const job of this.jobs) if (ACTIVE.includes(job.status) || job.status === 'queued') { job.status = 'paused'; job.speed = 0; }
     if (this.daemon?.exitCode === null) {
@@ -222,6 +264,8 @@ export class DownloadManager extends EventEmitter {
       await this.rpc('forceShutdown').catch(() => this.daemon.kill());
       await Promise.race([ended, new Promise(resolve => setTimeout(() => { this.daemon.kill('SIGKILL'); resolve(); }, 2000))]);
     }
+    for (const folder of this.sessionDirs) await rm(folder, { recursive: true, force: true });
+    this.sessionDirs.clear(); this.contexts.clear();
     await this.persist();
   }
 }

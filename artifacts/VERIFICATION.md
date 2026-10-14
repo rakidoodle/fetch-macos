@@ -64,3 +64,23 @@ This self-contained bundle requires **Apple Silicon and macOS 27+**, matching th
 The app is locally ad-hoc signed and verified. It has no Developer ID signature or Apple notarization. Source, artwork and screenshots are in Git; the v1.0.0 release provides the DMG separately, with engine sources and checksums.
 
 External hosts can deny requests, change formats, require authentication or restrict automation. Network restrictions, file moves, disk-full conditions and source availability can still produce recoverable transfer errors. No test can prove that every future URL or every possible system state is bug-free.
+
+
+## Web video upgrade (15 October 2026)
+
+The v1.1.0 upgrade adds general video-page analysis, native private-player detection across frames, HLS/DASH and media-element URLs, five video output choices (Original, MP4, WebM, MKV, MOV), and a remembered default format. Existing YouTube, direct-file and torrent behavior remains covered by regression checks.
+
+- Automated checks: **12 Swift tests and 20 backend tests passed**. New media tests use real generated audio/video, inspect output with FFprobe, download all five containers plus HLS/DASH, and verify cookies, referrers, private history permissions and captured-session recovery.
+- Native UI checks verified empty-page recovery, successful Find Video analysis, iframe MP4/HLS/DASH discovery, a real cookie/referrer-protected MP4 download, WebM conversion, and the remembered format choice. FFprobe confirmed both video and audio streams in the native results.
+- Extensionless Original downloads are inspected with FFprobe and renamed to their actual container without transcoding. Packaged tests found and corrected an unknown-suffix issue.
+- The localhost cookie regression found during native testing was corrected for Python cookie-jar behavior and exercised with a real download. Only the loopback host is normalized; website cookie scopes stay unchanged.
+- Packaged video checks exercise the authenticated API, invalid/null payloads, missing authorization, incorrect CSRF keys, extensionless media URLs and every video output format with the actual bundled tools.
+- Screenshots show controlled test transfers in an independently identified verification app. The normal profile's test entry was removed and its previous MP4 preference restored; its existing downloads were retained.
+
+Browser-assisted detection covers media URLs exposed through video elements, resource entries, Fetch and XHR in page frames. Individual HLS/DASH fragments are excluded from the candidate list. It does not promise interception of every browser protocol or player. An external example page loaded but exposed no detectable stream during this check; compatibility with that page is not claimed.
+
+Cookies are restricted to the detected media host and supplied using private temporary files. Actual stream URLs and cookies are excluded from saved job history and Fetch error messages. The download engine receives a reduced environment without the native service token. Completed jobs and service shutdown clear private sessions. A captured player session must be reopened after quitting, since its credentials are intentionally not kept in history.
+
+The final live check downloaded Blender's public Big Buck Bunny as 360p MP4 with audio (21,845,759 bytes), exercised pause/resume, and extracted MP3 (8,181,140 bytes). M4A, FLAC, WAV and Opus encoding also passed. An initial source access error was followed by successful sample and full-transfer checks with fresh extraction; download commands now disable yt-dlp's disk cache.
+
+Final installer checks passed all five extensionless video outputs directly from the mounted read-only DMG. Its code signature and disk-image checksum verified, and the installer secret scan reported no leaks. The 102-file source publication review found no local account paths, saved runtime data or credential files; raw logs and build output remain excluded.

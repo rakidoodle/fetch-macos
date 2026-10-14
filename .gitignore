@@ -5,6 +5,8 @@ artifacts/*
 !artifacts/VERIFICATION.md
 !artifacts/macos-ready.png
 !artifacts/macos-light.png
+!artifacts/macos-web-video.png
+!artifacts/macos-video-options.png
 .env
 .env.*
 !.env.example

@@ -1,16 +1,18 @@
 import Foundation
 
 public enum DownloadKind: String, Codable, CaseIterable, Identifiable {
-    case web, youtube, torrent
+    case web, video, youtube, torrent
     public var id: String { rawValue }
-    public var title: String { switch self { case .web: return "Web file"; case .youtube: return "YouTube"; case .torrent: return "Torrent" } }
-    public var symbol: String { switch self { case .web: return "globe"; case .youtube: return "play.rectangle"; case .torrent: return "point.3.connected.trianglepath.dotted" } }
+    public var isMedia: Bool { self == .youtube || self == .video }
+    public var title: String { switch self { case .web: return "Web file"; case .video: return "Web video"; case .youtube: return "YouTube"; case .torrent: return "Torrent" } }
+    public var symbol: String { switch self { case .web: return "globe"; case .video: return "film"; case .youtube: return "play.rectangle"; case .torrent: return "point.3.connected.trianglepath.dotted" } }
     public static func detect(_ source: String) -> Self {
         let value = source.trimmingCharacters(in: .whitespacesAndNewlines)
         if value.lowercased().hasPrefix("magnet:") { return .torrent }
         guard let url = URL(string: value) else { return .web }
         if url.path.lowercased().hasSuffix(".torrent") { return .torrent }
         if ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"].contains(url.host?.lowercased() ?? "") { return .youtube }
+        if ["m3u8", "mpd"].contains(url.pathExtension.lowercased()) { return .video }
         return .web
     }
 }
@@ -98,8 +100,9 @@ public struct AddRequest: Codable {
     public var format: String?
     public var torrent: String?
     public var name: String?
-    public init(type: DownloadKind, source: String, mode: String? = nil, resolution: String? = nil, format: String? = nil, torrent: String? = nil, name: String? = nil) {
-        self.type = type; self.source = source; self.mode = mode; self.resolution = resolution; self.format = format; self.torrent = torrent; self.name = name
+    public var context: VideoContext?
+    public init(type: DownloadKind, source: String, mode: String? = nil, resolution: String? = nil, format: String? = nil, torrent: String? = nil, name: String? = nil, context: VideoContext? = nil) {
+        self.type = type; self.source = source; self.mode = mode; self.resolution = resolution; self.format = format; self.torrent = torrent; self.name = name; self.context = context
     }
     public var validationError: String? {
         if type == .torrent, let torrent, !torrent.isEmpty { return nil }
@@ -115,16 +118,22 @@ public struct AddRequest: Codable {
         guard ["http", "https"].contains(scheme), url.host != nil else { return "Only HTTP and HTTPS links are supported." }
         if type == .torrent && !url.path.lowercased().hasSuffix(".torrent") { return "Use a magnet link, .torrent URL, or choose a torrent file." }
         if type == .youtube && DownloadKind.detect(text) != .youtube { return "Enter a YouTube video URL." }
+        if type.isMedia {
+            let mediaMode = mode ?? "video"
+            let formats = mediaMode == "audio" ? ["mp3", "m4a", "flac", "wav", "opus"] : ["original", "mp4", "webm", "mkv", "mov"]
+            if !["video", "audio"].contains(mediaMode) || !formats.contains(format ?? (mediaMode == "audio" ? "mp3" : "mp4")) { return "Choose a supported media format." }
+            if !["best", "2160", "1440", "1080", "720", "480", "360", "240", "144"].contains(resolution ?? "best") { return "Choose a supported resolution." }
+        }
         return nil
     }
 }
 public enum LibrarySection: String, CaseIterable, Identifiable {
-    case all, active, web, youtube, torrent, completed, paused, attention
+    case all, active, web, video, youtube, torrent, completed, paused, attention
     public var id: String { rawValue }
-    public var title: String { switch self { case .all: return "All downloads"; case .active: return "In progress"; case .web: return "Web files"; case .youtube: return "YouTube"; case .torrent: return "Torrents"; case .completed: return "Completed"; case .paused: return "Paused"; case .attention: return "Needs attention" } }
-    public var symbol: String { switch self { case .all: return "tray.full"; case .active: return "arrow.down.circle"; case .web: return "globe"; case .youtube: return "play.rectangle"; case .torrent: return "point.3.connected.trianglepath.dotted"; case .completed: return "checkmark.circle"; case .paused: return "pause.circle"; case .attention: return "exclamationmark.circle" } }
+    public var title: String { switch self { case .all: return "All downloads"; case .active: return "In progress"; case .web: return "Web files"; case .video: return "Web video"; case .youtube: return "YouTube"; case .torrent: return "Torrents"; case .completed: return "Completed"; case .paused: return "Paused"; case .attention: return "Needs attention" } }
+    public var symbol: String { switch self { case .all: return "tray.full"; case .active: return "arrow.down.circle"; case .web: return "globe"; case .video: return "film"; case .youtube: return "play.rectangle"; case .torrent: return "point.3.connected.trianglepath.dotted"; case .completed: return "checkmark.circle"; case .paused: return "pause.circle"; case .attention: return "exclamationmark.circle" } }
     public func includes(_ job: DownloadJob) -> Bool {
-        switch self { case .all: return true; case .active: return job.isActive || job.status == "queued"; case .web, .youtube, .torrent: return job.type.rawValue == rawValue; case .completed: return job.status == "completed"; case .paused: return job.status == "paused"; case .attention: return job.status == "error" }
+        switch self { case .all: return true; case .active: return job.isActive || job.status == "queued"; case .web, .video, .youtube, .torrent: return job.type.rawValue == rawValue; case .completed: return job.status == "completed"; case .paused: return job.status == "paused"; case .attention: return job.status == "error" }
     }
 }
 public enum DownloadSort: String, CaseIterable, Identifiable {
@@ -159,4 +168,30 @@ public enum DisplayFormat {
 public enum ServiceError: LocalizedError {
     case message(String)
     public var errorDescription: String? { switch self { case .message(let text): return text } }
+}
+
+public struct VideoInfo: Decodable {
+    public let title: String
+    public let extractor: String
+    public let resolutions: [Int]
+    public let formatCount: Int
+}
+public struct VideoCookie: Codable {
+    public let name: String
+    public let value: String
+    public let domain: String
+    public let path: String
+    public let secure: Bool
+    public let expires: Double
+    public init(_ cookie: HTTPCookie) {
+        name = cookie.name; value = cookie.value; domain = cookie.domain; path = cookie.path
+        secure = cookie.isSecure; expires = cookie.expiresDate?.timeIntervalSince1970 ?? 0
+    }
+}
+public struct VideoContext: Codable {
+    public let url: String
+    public let userAgent: String
+    public let referer: String?
+    public let cookies: [VideoCookie]
+    public init(url: String, userAgent: String, cookies: [VideoCookie], referer: String? = nil) { self.url = url; self.userAgent = userAgent; self.cookies = cookies; self.referer = referer }
 }

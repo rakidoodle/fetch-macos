@@ -11,16 +11,16 @@ Built with SwiftUI and AppKit, Fetch feels at home on macOS. Its appearance foll
 ## What you can do
 
 - **Save files:** paste an HTTP or HTTPS link. Fetch can download large files in several pieces when the website supports it.
-- **Save YouTube media:** choose a video or just its audio. Pick the video quality and file type separately.
+- **Save web videos:** use Find Video on supported websites, or Open Player to detect exposed video links and HLS/DASH streams. YouTube is supported too.
 - **Download torrents:** paste a magnet or torrent link, or open a `.torrent` file.
 - **Stay in control:** pause, resume, cancel or retry downloads. Search your list, filter it, and set a speed limit.
 - **Find your files:** show finished downloads in Finder or save a copy somewhere else. Removing a history entry keeps the downloaded file.
 
-Video formats: **MP4, WebM and MKV**. Audio formats: **MP3, M4A, FLAC, WAV and Opus**. Available video quality depends on the source.
+Video formats: **MP4, WebM, MKV, MOV and Original**. Choose your default in Settings; each download can use a different format. Original keeps the source format and avoids extra conversion. Audio formats: **MP3, M4A, FLAC, WAV and Opus**. Available video quality depends on the source.
 
 ## Get started
 
-Download **[Fetch-1.0.0-arm64.dmg](https://github.com/rakidoodle/fetch-macos/releases/download/v1.0.0/Fetch-1.0.0-arm64.dmg)** from the [GitHub release](https://github.com/rakidoodle/fetch-macos/releases/latest). Open it, drag Fetch into Applications, then open Fetch.
+Download **[Fetch-1.1.0-arm64.dmg](https://github.com/rakidoodle/fetch-macos/releases/download/v1.1.0/Fetch-1.1.0-arm64.dmg)** from the [GitHub release](https://github.com/rakidoodle/fetch-macos/releases/latest). Open it, drag Fetch into Applications, then open Fetch.
 
 This repository also contains the app's source, artwork, screenshots and build tools. To make your own app, follow [Build from source](#build-from-source).
 
@@ -33,6 +33,20 @@ After building:
 3. Use **Show in Finder** when the download finishes.
 
 The finished bundle includes Node, aria2, yt-dlp, FFmpeg and ffprobe. It can run without Homebrew, Python, Node or the source folder installed separately. The release is ad-hoc signed and signature-checked; it does not have an Apple Developer ID signature or notarization. If macOS blocks the first launch and you trust this release, use **System Settings > Privacy & Security > Open Anyway**. See [Apple's instructions](https://support.apple.com/en-us/102445).
+
+## Download a web video
+
+1. Press **Command-N**, select **Web video**, and paste the page link.
+2. Click **Find Video**. If the page needs its player, click **Open Player**, press Play, and choose **Use This Video** beside the detected stream.
+3. Choose video or audio, select the output format, and click **Add Download**.
+
+Embedded frames, direct media files, HLS (`.m3u8`) and DASH (`.mpd`) playlists can be detected. The app also detects video-element URLs without a file extension. Individual stream fragments are hidden from the candidate list. Pages can contain video ads, so choose the stream for your intended video. **Open Player Page** can open a detected iframe directly when its cookies require a first-party visit.
+
+The private player starts with an empty browser profile. It does not import your usual browser's cookies. Cookies are scoped to the selected media host, held in memory, and passed to the engine through temporary private files. They are not written to Fetch history or service logs. Temporary cookie files are removed on transfer completion or service shutdown. After quitting, a captured player session must be refreshed by reopening the page; expired signed stream URLs are not saved in history.
+
+Available quality depends on the source. The resolution menu offers caps when metadata lists resolutions; otherwise it uses source quality. Format conversion can take extra time. DRM-protected content and players that expose no usable stream remain unsupported. This app cannot promise downloads from every website.
+
+![Fetch showing a completed video from a controlled private-session test](artifacts/macos-web-video.png)
 
 ## A few useful shortcuts
 
@@ -96,7 +110,7 @@ Review the exact bundled components' license and corresponding-source requiremen
 
 ## Tested behavior
 
-**28 automated tests passed: 11 Swift tests and 17 engine/API tests.** Additional checks exercised the real macOS interface, exact downloaded bytes, torrents, pause/resume, restart recovery and live YouTube video/audio downloads. Light and dark text contrast, bundle signatures and the installer were checked too.
+**32 automated tests passed: 12 Swift tests and 20 engine/API tests.** Packaged tests also downloaded extensionless media into all five video formats and checked authorization, CSRF and invalid requests. Additional checks exercised the real macOS interface, exact downloaded bytes, torrents, pause/resume, restart recovery and live YouTube video/audio downloads. Light and dark text contrast, bundle signatures and the installer were checked too.
 
 See the [verification report](artifacts/VERIFICATION.md) for tested flows and limits. These results describe the tested build; websites, network conditions and future tool versions can change behavior.
 

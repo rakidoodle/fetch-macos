@@ -28,10 +28,12 @@ import FetchCore
     var resources: URL { Bundle.main.resourceURL! }
     var dataDir: URL {
         if let value = ProcessInfo.processInfo.environment["FETCH_TEST_DATA_DIR"] { return URL(fileURLWithPath: value) }
+        if Bundle.main.bundleIdentifier?.hasSuffix(".verification") == true, let value = Bundle.main.object(forInfoDictionaryKey: "FetchVerificationDataDir") as? String { return URL(fileURLWithPath: value) }
         return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Fetch", isDirectory: true)
     }
     var downloadDir: URL {
         if let value = ProcessInfo.processInfo.environment["FETCH_TEST_DOWNLOAD_DIR"] { return URL(fileURLWithPath: value) }
+        if Bundle.main.bundleIdentifier?.hasSuffix(".verification") == true, let value = Bundle.main.object(forInfoDictionaryKey: "FetchVerificationDownloadDir") as? String { return URL(fileURLWithPath: value) }
         return FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0].appendingPathComponent("Fetch", isDirectory: true)
     }
     var jobs: [DownloadJob] { state?.jobs ?? [] }
@@ -85,6 +87,10 @@ import FetchCore
         try await refresh()
         section = .all; statusFilter = "all"; search = ""; selectedID = id
         notify("Download added.")
+    }
+    func analyzeVideo(_ source: String) async throws -> VideoInfo {
+        guard let client, online else { throw ServiceError.message("Download service is unavailable.") }
+        return try await client.analyzeVideo(source)
     }
     func action(_ job: DownloadJob, _ action: String) async {
         guard let client, online, !pending.contains(job.id) else { return }

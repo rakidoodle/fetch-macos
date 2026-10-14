@@ -26,7 +26,7 @@ struct InspectorView: View {
                 Divider()
                 VStack(alignment: .leading, spacing: 12) {
                     item("Type", value: job.type.title)
-                    if job.type == .youtube {
+                    if job.type.isMedia {
                         item("Media", value: job.mode == "audio" || job.quality == "audio" ? "Audio only" : "Video")
                         if job.mode != "audio", job.quality != "audio" {
                             let cap = job.resolution ?? job.quality ?? "best"

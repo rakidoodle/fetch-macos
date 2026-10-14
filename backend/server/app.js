@@ -19,6 +19,7 @@ export function createApp(manager, { allowedPort } = {}) {
   app.use(express.json({ limit: '8mb' }));
   app.get('/api/state', (req, res) => res.json({ ...manager.snapshot(), key }));
   app.get('/api/health', (req, res) => res.json({ ok: true, engines: manager.engines }));
+  app.post('/api/videos/analyze', async (req, res) => { res.json(await manager.analyzeVideo(req.body?.source)); });
   app.post('/api/downloads', async (req, res) => {
     const job = await manager.run(() => manager.add(req.body)); res.status(201).json({ id: job.id });
   });

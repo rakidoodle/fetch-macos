@@ -87,10 +87,10 @@ minimum='.'.join(map(str,min_version))
 info={
  'CFBundleExecutable':'Fetch','CFBundleName':'Fetch','CFBundleDisplayName':'Fetch',
  'CFBundleIdentifier':'com.nokit.fetch','CFBundlePackageType':'APPL',
- 'CFBundleShortVersionString':'1.0.0','CFBundleVersion':'1','CFBundleIconFile':'AppIcon',
+ 'CFBundleShortVersionString':'1.1.0','CFBundleVersion':'2','CFBundleIconFile':'AppIcon',
  'LSMinimumSystemVersion':minimum,'NSHighResolutionCapable':True,
  'NSDownloadsFolderUsageDescription':'Fetch saves downloaded files in Downloads/Fetch.',
- 'NSPrincipalClass':'NSApplication','NSAppTransportSecurity':{'NSAllowsLocalNetworking':True},
+ 'NSPrincipalClass':'NSApplication','NSAppTransportSecurity':{'NSAllowsLocalNetworking':True,'NSAllowsArbitraryLoadsInWebContent':True},
  'CFBundleURLTypes':[{'CFBundleURLName':'BitTorrent magnet','CFBundleURLSchemes':['magnet']}],
  'NSHumanReadableCopyright':'Fetch. Download engines retain their respective licenses.'
 }
@@ -98,6 +98,7 @@ with open(APP/'Contents/Info.plist','wb') as f:plistlib.dump(info,f)
 provenance={'minimum_macos':minimum,'architecture':'arm64','yt_dlp_version':version,'yt_dlp_sha256':expected,'node_version':capture([BIN/'node','--version']).strip(),'dylibs':{k:str(v) for k,v in copied.items()}}
 (RES/'Licenses/runtime-manifest.json').write_text(json.dumps(provenance,indent=2)+'\n')
 shutil.copy2(ROOT/'THIRD_PARTY.md',RES/'Licenses/THIRD_PARTY.md')
+if (ROOT/'Assets/EngineLicenses').exists(): shutil.copytree(ROOT/'Assets/EngineLicenses',RES/'Licenses/Components')
 # Full license texts accompany the executables.
 for name,url in {
  'Node-LICENSE.txt':'https://raw.githubusercontent.com/nodejs/node/v24.21.0/LICENSE',

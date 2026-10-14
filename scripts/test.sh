@@ -12,4 +12,5 @@ swift test --build-system native --sdk "$SDK_PATH" --disable-xctest \
 export PATH="$ROOT_DIR/release/Fetch.app/Contents/Resources/Runtime/bin:/usr/bin:/bin"
 node --test --test-concurrency=1 backend/tests/*.test.js
 node scripts/test-native.mjs
+node scripts/test-packaged-video.mjs
 if [[ "${FETCH_LIVE_TESTS:-0}" == "1" ]]; then node scripts/test-live.mjs; fi

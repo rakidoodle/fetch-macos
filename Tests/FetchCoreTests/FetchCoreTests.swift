@@ -42,6 +42,21 @@ struct FetchCoreTests {
         expectEqual(decoded.mode, "audio"); expectEqual(decoded.format, "flac")
         expectEqual(decoded.resolution, "best"); expectEqual(decoded.quality, "audio")
     }
+    @Test func testWebVideoFormatsAndNativeMetadata() throws {
+        for format in ["original", "mp4", "webm", "mkv", "mov"] {
+            expectNil(AddRequest(type: .video, source: "https://example.com/player", format: format).validationError)
+        }
+        expectNotNil(AddRequest(type: .video, source: "https://example.com/player", format: "exe").validationError)
+        expectNotNil(AddRequest(type: .video, source: "https://example.com/player", resolution: "999").validationError)
+        expectEqual(DownloadKind.detect("https://example.com/video.m3u8?signature=example"), .video)
+        expectEqual(DownloadKind.detect("https://example.com/video.mpd"), .video)
+        let video = try job(type: "video")
+        expectTrue(LibrarySection.video.includes(video)); expectTrue(video.type.isMedia)
+        expectFalse(LibrarySection.youtube.includes(video))
+        let data = Data(#"{"title":"Test video","extractor":"generic","resolutions":[720,360],"formatCount":2}"#.utf8)
+        let info = try JSONDecoder().decode(VideoInfo.self, from: data)
+        expectEqual(info.resolutions, [720,360]); expectEqual(info.formatCount, 2)
+    }
     @Test func testSettingsBounds() {
         expectTrue(TransferSettings().isValid)
         expectTrue(TransferSettings(connections: 16, maxActive: 8, speedLimit: 1_000_000).isValid)
