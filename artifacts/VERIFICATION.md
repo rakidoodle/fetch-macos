@@ -57,8 +57,10 @@ An intentional HTTP 404 fixture verified the error/retry layout without an appli
 
 ## Practical limits
 
+Release preparation rebuilt the DMG with current installation instructions and component notices. All eight packaged integration phases passed again directly from the read-only mounted installer. Its app signature and disk-image checksum verified. Gitleaks 8.30.1 found no secrets in the installer contents; no environment files, saved history, logs or credential key files were present. The release provides SHA-256 asset checksums and a separate versioned engine-source archive, with upstream source archives, patches and build recipes.
+
 This self-contained bundle requires **Apple Silicon and macOS 27+**, matching the actual minimum deployment targets of the bundled engines. Earlier macOS versions were not tested or claimed. Source code targets macOS 14; supporting earlier systems requires compatible engine/library builds.
 
-The app is locally ad-hoc signed and verified. It has no Developer ID signature or Apple notarization. This repository publishes source, artwork and screenshots. Prebuilt engine bundles are not included.
+The app is locally ad-hoc signed and verified. It has no Developer ID signature or Apple notarization. Source, artwork and screenshots are in Git; the v1.0.0 release provides the DMG separately, with engine sources and checksums.
 
 External hosts can deny requests, change formats, require authentication or restrict automation. Network restrictions, file moves, disk-full conditions and source availability can still produce recoverable transfer errors. No test can prove that every future URL or every possible system state is bug-free.

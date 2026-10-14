@@ -20,7 +20,9 @@ Video formats: **MP4, WebM and MKV**. Audio formats: **MP3, M4A, FLAC, WAV and O
 
 ## Get started
 
-This repository contains the app's source, artwork, screenshots and build tools. To make your own app, follow [Build from source](#build-from-source).
+Download **[Fetch-1.0.0-arm64.dmg](https://github.com/rakidoodle/fetch-macos/releases/download/v1.0.0/Fetch-1.0.0-arm64.dmg)** from the [GitHub release](https://github.com/rakidoodle/fetch-macos/releases/latest). Open it, drag Fetch into Applications, then open Fetch.
+
+This repository also contains the app's source, artwork, screenshots and build tools. To make your own app, follow [Build from source](#build-from-source).
 
 The tested app bundle needs **an Apple Silicon Mac running macOS 27 or later**. The Swift source targets macOS 14, but the engines used in the tested bundle require macOS 27. Supporting earlier systems requires compatible engine and library builds.
 
@@ -30,7 +32,7 @@ After building:
 2. Press **Command-N** and paste a link. For YouTube, choose video or audio and your preferred format.
 3. Use **Show in Finder** when the download finishes.
 
-The finished bundle includes Node, aria2, yt-dlp, FFmpeg and ffprobe. It can run without Homebrew, Python, Node or the source folder installed separately. Local builds are ad-hoc signed and signature-checked; they do not have an Apple Developer ID signature or notarization.
+The finished bundle includes Node, aria2, yt-dlp, FFmpeg and ffprobe. It can run without Homebrew, Python, Node or the source folder installed separately. The release is ad-hoc signed and signature-checked; it does not have an Apple Developer ID signature or notarization. If macOS blocks the first launch and you trust this release, use **System Settings > Privacy & Security > Open Anyway**. See [Apple's instructions](https://support.apple.com/en-us/102445).
 
 ## A few useful shortcuts
 
